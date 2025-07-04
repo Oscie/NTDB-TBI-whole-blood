@@ -1,0 +1,1141 @@
+---
+title: "NTDB whole blood resuscitation (B0749)"
+author: "Rick Caplan"
+date: last-modified
+format: 
+  html:
+    theme: flatly
+    toc: true
+    toc-depth: 2
+    toc-location: left
+    code-fold: true
+    smooth-scroll: true
+    number-sections: true
+    page-layout: full
+embed-resources: true
+bibliography: bib2.bib
+citations-hover: true
+---
+     
+      
+```{r setup.1, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, 
+                      message = FALSE, include = TRUE)
+
+  ### read data ###
+
+source('create.2yrs.v5.r')  
+
+library(knitr)
+library(kableExtra)
+library(arsenal)
+library(randomForest)
+library(pROC)
+library(mfp)
+library(survminer)
+library(broom)
+library(rms)
+library(AICcmodavg)
+library(survival)
+library(marginaleffects)
+library(mice)
+library(writexl)
+
+filter <- dplyr::filter
+select <- dplyr::select
+```
+    
+```{r setup.2, include=FALSE}
+
+  ### parameters and functions ###
+
+main <- TRUE   # main analyses
+main2 <- TRUE  # death/hospice
+wrangle <- TRUE  # data wrangling
+wrangle2 <- TRUE  # sensitivity analyses
+
+Controls <- 
+  tableby.control(test = TRUE,
+                  total = FALSE,
+                  numeric.stats = c("N", "meansd", 
+                                    "medianq1q3", "min","max","Nmiss"),
+                  numeric.test = "kwt",
+                  cat.stats = c("N","countpct", "Nmiss"),
+                  cat.test = "chisq",
+                  stats.labels = list(N='Count',
+                                      q1q3='Q1,Q3',
+                                      Nmiss="Missing")
+  )
+
+note <- function( text ){
+  as_tibble( text ) %>% 
+    rename(" " = "value") %>% 
+    kbl() %>% 
+    kable_classic(font_size=20)
+}
+
+Missing <- function(ds) sapply(ds, function(x) sum(is.na(x)))
+
+# dummy values set for testing
+
+hr.primary <- 0
+low.primary <- 0
+high.primary <- 0
+p.primary <- 0
+
+hr.sens <- 0
+low.sens <- 0
+high.sens <- 0
+p.sens <- 0
+
+pvalue <- 0
+p_y <- 0
+or <- 0
+results <- 0
+pvalue.hem <- 0
+hr.ratio <- 0
+pvalue.ratio <- 0
+low.ratio <- 0
+high.ratio <- 0
+```
+    
+    
+```{r setup.3, include=FALSE}
+
+  ### multiple imputation and related functions ###
+
+# categorical variables as factors for correct mice default algorithm
+
+tmp.0 <- filter(df, age_f == "65+") %>% 
+  select(WB_GROUP, sex, status,
+         ais_head, ais_chest, ais_abd, totalgcs, 
+         sbp, pulserate, age, finaldischargehrs, 
+         dementia_x, moi, cirrhosis_x, 
+         cerebrovascular_accident_x, bleeding_disorder_x,
+         chronic_renal_failure_x, diabetes_mellitus_x, anticoagulant_therapy_x,
+         crany_hrs, inc_key, ratio_flag, ratio_group, hem_flg, hem_hrs) %>% 
+  mutate(across(c(sex, WB_GROUP, status, ratio_flag, ratio_group, moi,
+                  dementia_x, cirrhosis_x, cerebrovascular_accident_x,
+                  bleeding_disorder_x, chronic_renal_failure_x, diabetes_mellitus_x,
+                  anticoagulant_therapy_x),
+                ~ factor(.x))) 
+
+# exclude variables not involved with imputation
+# crany_hrs and hem_hrs are structurally missing for pts without procedure
+
+exclude.imputations <- select(tmp.0, crany_hrs, inc_key, ratio_flag, ratio_group,
+                      hem_flg, hem_hrs)
+
+set.seed(123)
+imp_tmp <- mice(select(tmp.0, -c(crany_hrs, inc_key, ratio_flag, ratio_group,
+                                 hem_flg, hem_hrs)), 
+                printFlag = FALSE, seed = 19308, m=5)
+
+# these datasets with imputed variables are used throughout
+
+imp.complete.1 <- mice::complete(imp_tmp, action = 1L) %>% 
+  bind_cols(exclude.imputations)
+imp.complete.2 <- mice::complete(imp_tmp, action = 2L) %>% 
+  bind_cols(exclude.imputations)
+imp.complete.3 <- mice::complete(imp_tmp, action = 3L) %>% 
+  bind_cols(exclude.imputations)
+imp.complete.4 <- mice::complete(imp_tmp, action = 4L) %>% 
+  bind_cols(exclude.imputations)
+imp.complete.5 <- mice::complete(imp_tmp, action = 5L) %>% 
+  bind_cols(exclude.imputations)
+
+```
+    
+    
+```{r setup.4, include=FALSE}
+
+CoxPH <- function(FORMULA){
+  tmp.1 <- tmerge(data1 = a.1,
+                  data2 = a.1,
+                  id = inc_key,
+                  death = event( finaldischargehrs, status ),
+                  crany = tdc( crany_hrs ),
+                  options = list( idname = "inc_key" ) )
+  
+  tmp.2 <- tmerge(data1 = a.2,
+                  data2 = a.2,
+                  id = inc_key,
+                  death = event( finaldischargehrs, status ),
+                  crany = tdc( crany_hrs ),
+                  options = list( idname = "inc_key" ) )
+  
+  tmp.3 <- tmerge(data1 = a.3,
+                  data2 = a.3,
+                  id = inc_key,
+                  death = event( finaldischargehrs, status ),
+                  crany = tdc( crany_hrs ),
+                  options = list( idname = "inc_key" ) )
+  
+  tmp.4 <- tmerge(data1 = a.4,
+                  data2 = a.4,
+                  id = inc_key,
+                  death = event( finaldischargehrs, status ),
+                  crany = tdc( crany_hrs ),
+                  options = list( idname = "inc_key" ) )
+  
+  tmp.5 <- tmerge(data1 = a.5,
+                  data2 = a.5,
+                  id = inc_key,
+                  death = event( finaldischargehrs, status ),
+                  crany = tdc( crany_hrs ),
+                  options = list( idname = "inc_key" ) ) 
+  
+  m.1 <- coxph(FORMULA, id = inc_key, data = tmp.1)
+  m.2 <- coxph(FORMULA, id = inc_key, data = tmp.2)
+  m.3 <- coxph(FORMULA, id = inc_key, data = tmp.3)
+  m.4 <- coxph(FORMULA, id = inc_key, data = tmp.4)
+  m.5 <- coxph(FORMULA, id = inc_key, data = tmp.5)
+  
+  tmp.mira <- as.mira(list(m.1, m.2, m.3, m.4, m.5))
+  
+  results <- 
+    tidy(pool(tmp.mira)) %>% 
+    select(term, estimate, std.error, statistic, p.value) %>% 
+    rename(hr=estimate) %>% 
+    mutate(ci.low = hr - 1.96*std.error,
+           ci.high = hr + 1.96*std.error) %>% 
+    relocate(p.value, .after = ci.high) %>% 
+    mutate(across(c(hr, ci.low, ci.high), ~ exp(.x))) %>% 
+    mutate(across(where(is.numeric), ~ round(.x, digits = 3)))
+  
+  return(results)
+}
+
+```
+    
+         
+# Reasons for exclusion from analyses     
+
+      
+```{r eval=main}
+
+# These numbers were abstracted from the SAS log file for each year
+
+df2021count <- 
+  data.frame( NumberRemaining2021 = rep(0,5)) %>% 
+  mutate(
+    NumberRemaining2021 = c(1209097,
+                            66027,
+                            46841,
+                            42837,
+                            19800),
+    Exclusion = c("Starting number",
+                  "After exclude No 4 hr transfusion",
+                  "After exclude not eligible TQIP adult",
+                  "After exclude death or LOS w/i 4 hrs",
+                  "After exclude AIS head < 2")
+  ) %>% 
+  select(-Exclusion)
+
+df2020count <- 
+  data.frame( NumberRemaining2020 = rep(0,5)) %>% 
+  mutate(
+    NumberRemaining2020 = c(1133053,
+                            60024,
+                            42674,
+                            38490,
+                            17747),
+    Exclusion = c("Starting number",
+                  "After exclude No 4 hr transfusion",
+                  "After exclude not eligible TQIP adult",
+                  "After exclude death or LOS w/i 4 hrs",
+                  "After exclude AIS head < 2")
+  )
+
+df.allcount <- 
+  bind_cols(df2021count, df2020count) %>% 
+  mutate(NumberRemaining = NumberRemaining2021 +
+           NumberRemaining2020 ) %>% 
+  select(Exclusion, NumberRemaining)
+
+df.allcount[6,1] <- "After exclude transfers"
+df.allcount[6,2] <- nrow(df)
+
+print(df.allcount)
+
+```
+      
+      
+# Table 1. Baseline characteristics     
+      
+     
+```{r}
+
+Table <- 
+  tableby(
+    wb_group ~ age  + sex + race + ethnicity + 
+      bleeding_disorder_x + chronic_renal_failure_x + cerebrovascular_accident_x +
+      diabetes_mellitus_x + cirrhosis_x + dementia_x + anticoagulant_therapy_x + 
+      traumatype + moi + sbp + pulserate +
+      totalgcs + iss + ais_head + ais_chest + ais_abd +
+      ais_extrem + ais_ext + ais_face,
+    total = TRUE,
+    data = filter(df, age_f == "65+"),
+    control = Controls
+  )
+
+summary(Table, text=TRUE) %>% 
+  kbl() %>% 
+  kable_classic(full_width=FALSE)
+
+```
+     
+      
+# Table 2. In-hospital    
+     
+- hmrrhgctrlsurgtype and hmrrhgctrlsurghrs represent surgery for
+hemorrhage control. These are variables that are in the core patient
+NTDB dataset, one row per patient.   
+- embolizationhrs represents embolization for
+hemorrhage control. It comes from the NTDB ICD procedure dataset.   
+- hem_flg and hem_hrs represent the *first* procedure
+for hemorrhage control, surgery or embolization.   
+    
+- red_cells4hours_flag, plasma4hours_flag, platelets4hours_flag,
+and whole_blood4hours_flag are flags when transfusion volume
+was reported. ICD procedure codes for transfusion do not always
+match the reported volume.  
+    
+     
+```{r eval=main}
+
+Table <- 
+  tableby(
+    wb_group ~ crany_flg + embolization_flag + hmrrhgctrlsurgtype +
+    hmrrhgctrlsurghrs,
+    total = TRUE,
+    data = filter(df, age_f == "65+"),
+    control = Controls
+  )
+
+summary(Table, text=TRUE) %>% 
+  kbl() %>% 
+  kable_classic(full_width=FALSE)
+
+```
+     
+  
+# Table 3. Outcomes     
+     
+finaldischargehrs is Hospital length of stay       
+     
+    
+```{r eval=main}
+
+Table <- 
+  tableby(
+    wb_group ~ dead + acute_kidney_injury + acute_respiratory_distress_syndr +
+      myocardial_infarction + stroke_cva + severe_sepsis +
+      ventilator_associated_pneumonia + 
+      unplanned_admission_to_icu +
+      unplanned_visit_to_or + withdraw_care + dead_withdraw_care,
+    total = TRUE,
+    data = filter(df, age_f == "65+"),
+    control = Controls
+  )
+
+summary(Table, text=TRUE) %>% 
+  kbl() %>% 
+  kable_classic(full_width=FALSE)
+
+
+note("Length of stay among patients discharged alive")
+
+Table <- 
+  tableby(
+    wb_group ~ finaldischargehrs + eddischargehrs,
+    total = TRUE,
+    data = filter(df, dead=="No", age_f == "65+"),
+    control = Controls
+  )
+
+summary(Table, text=TRUE) %>% 
+  kbl() %>% 
+  kable_classic(full_width=FALSE)
+
+```
+     
+     
+# Table 4. Multivariable regression of mortality    
+     
+In the output, "rcs" means restricted cubic splines. It is a method that breaks up a continuous variable into pieces that allow a more flexible representation in the model. Unfortunately, the pieces are not interpretable.       
+     
+     
+## Patients 65+    
+     
+```{r eval=main, include=FALSE}
+f <- as.formula("Surv(tstart, tstop, death) ~ WB_GROUP + ais_head + 
+                  ais_chest + ais_abd + totalgcs + rcs(sbp) + crany + 
+                  chronic_renal_failure_x + diabetes_mellitus_x + 
+                  anticoagulant_therapy_x + cerebrovascular_accident_x + 
+                  age + moi + rcs(pulserate) + sex + 
+                  cirrhosis_x + dementia_x")
+
+a.1 <- imp.complete.1
+a.2 <- imp.complete.2
+a.3 <- imp.complete.3
+a.4 <- imp.complete.4
+a.5 <- imp.complete.5
+
+results <- CoxPH(f) 
+```
+     
+```{r eval=main}
+print(results)
+
+x <- filter(results, str_detect(term, "WB_GROUP") == TRUE)
+hr.primary <- x$hr
+pvalue.primary <- x$p.value
+low.primary <- x$ci.low
+high.primary <- x$ci.high
+```
+   
+The mortality hazard ratio of WB+CB:CB with 95% confidence interval and p-value are `r hr.primary` (`r low.primary`, `r high.primary`) p=`r pvalue.primary`.  
+     
+    
+## Patients 65+, include time to hemorrhage control      
+    
+This is the subset of 65+ patients who received hemorrhage control. It is analysis of  mortality analysis and includes the additional variable, time to hemorrhage control (hours).    
+    
+    
+```{r  eval=main, include=FALSE}
+
+# This is necessary because a.x changes for different subset analyses
+
+a.1 <- filter(imp.complete.1, hem_flg == "Yes")
+a.2 <- filter(imp.complete.2, hem_flg == "Yes")
+a.3 <- filter(imp.complete.3, hem_flg == "Yes")
+a.4 <- filter(imp.complete.4, hem_flg == "Yes")
+a.5 <- filter(imp.complete.5, hem_flg == "Yes")
+
+cat(paste("Number of patients included in analysis is", nrow(a.1)))
+
+f <- as.formula("Surv(tstart, tstop, death) ~ WB_GROUP + hem_hrs + ais_head + 
+                  ais_chest + ais_abd + totalgcs + rcs(sbp) + crany + 
+                  chronic_renal_failure_x + diabetes_mellitus_x + 
+                  anticoagulant_therapy_x + cerebrovascular_accident_x + 
+                  age + moi + rcs(pulserate) + sex + 
+                  cirrhosis_x + dementia_x")
+
+results <- CoxPH(f) 
+```
+     
+```{r eval=main}
+print(results)
+
+x <- filter(results, str_detect(term, "WB_GROUP") == TRUE)
+hr <- x$hr
+pvalue <- x$p.value
+low <- x$ci.low
+high <- x$ci.high
+
+
+y <- filter(results, str_detect(term, "hem_hrs") == TRUE)
+pvalue.hem <- y$p.value
+```
+   
+The number of patients included in this analysis of patients receiving hemorrhage control is `r nrow(a.1)`. `The mortality hazard ratio of WB+CB:CB with 95% confidence interval and p-value are `r hr` (`r low`, `r high`) p=`r pvalue`. The test of time to  hemorrhage control is p = `r pvalue.hem`. The estimate of hazard ratio with confidence interval is given in the results, but time in  hours is a continuous variable and the hazard ratio for one hour may be too small a time interval to make sense; so the  p-value should be sufficient to report.   
+     
+     
+# Kaplan-Meier graphs    
+     
+    
+```{r eval=main}
+m <- 
+  survfit( Surv( finaldischargehrs/24, status) ~ WB_GROUP, 
+           data = filter(df, age_f == "65+") )
+
+ggsurvplot(m, risk.table = TRUE,  conf.int = TRUE,
+           legend.title = "Group",
+           legend.labs=c("CB only", "WB+CB"),
+           xlim = c(0, 80),
+           break.x.by = 20) +
+  labs( x = "Days")
+
+tiff("analysis.2yrs.v5.65.tif", width=900, height=900)  
+ggsurvplot(m, risk.table = TRUE,  conf.int = TRUE,
+           legend.title = "Group",
+           legend.labs=c("CB only", "WB+CB"),
+           xlim = c(0, 80),
+           break.x.by = 20) +
+  labs( x = "Days")
+dev.off()  
+```
+     
+      
+# Ratio RBC:plasma by treatment group    
+   
+## Categorization of RBC and plasma by treatment group    
+    
+```{r}
+
+note("All patients")
+
+Table <- 
+  tableby(
+    wb_group ~ ratio_flag ,
+    total = TRUE,
+    data = df,
+    control = Controls
+  )
+
+summary(Table, text=TRUE) %>% 
+  kbl() %>% 
+  kable_classic(full_width=FALSE)
+
+note("65+ patients")
+
+Table <- 
+  tableby(
+    wb_group ~ ratio_flag ,
+    total = TRUE,
+    data = filter(df, age_f == "65+"),
+    control = Controls
+  )
+
+summary(Table, text=TRUE) %>% 
+  kbl() %>% 
+  kable_classic(full_width=FALSE)
+
+```
+    
+## Distribution of valid ratios by treatment group   
+    
+This is the subset of patients that had a valid ratio.   
+    
+```{r}
+
+note("All  patients")
+
+Table <- 
+  tableby(
+    wb_group ~ ratio_rbc_plasma ,
+    total = TRUE,
+    data = filter(df, ratio_flag == "Ratio valid"),
+    control = Controls
+  )
+
+summary(Table, text=TRUE) %>% 
+  kbl() %>% 
+  kable_classic(full_width=FALSE)
+
+filter(df, ratio_flag == "Ratio valid", ratio_rbc_plasma < 10) %>% 
+  ggplot(aes(ratio_rbc_plasma, fill=wb_group)) + 
+  geom_density(position="identity", alpha=0.60, 
+                show.legend=TRUE, linewidth = 2 ) +
+  scale_fill_viridis_d() +
+  scale_y_continuous(limits = c(0, NA),
+                     expand = c(0, 0)) +
+  theme(legend.position = "right") +
+  labs(title = "Smoothed histograms of distributions of valid ratio RBC:plasma")
+
+
+note("65+ patients")
+
+Table <- 
+  tableby(
+    wb_group ~ ratio_rbc_plasma ,
+    total = TRUE,
+    data = filter(df, ratio_flag == "Ratio valid", age_f == "65+"),
+    control = Controls
+  )
+
+summary(Table, text=TRUE) %>% 
+  kbl() %>% 
+  kable_classic(full_width=FALSE)
+
+filter(df, ratio_flag == "Ratio valid", ratio_rbc_plasma < 10, age_f == "65+") %>% 
+  ggplot(aes(ratio_rbc_plasma, fill=wb_group)) + 
+  geom_density(position="identity", alpha=0.60, 
+                show.legend=TRUE, linewidth = 2 ) +
+  scale_fill_viridis_d() +
+  scale_y_continuous(limits = c(0, NA),
+                     expand = c(0, 0)) +
+  theme(legend.position = "right") +
+  labs(title = "Smoothed histograms of distributions of valid ratio RBC:plasma")
+```
+     
+      
+# Mortality by RBC:plasma ratio    
+   
+**Patients with neither RBC nor plasma are excluded from these analyses.** If they had RBC or plasma but not both, they are included as a "Bad ratio."    
+   
+   
+## Descriptive tables   
+   
+```{r eval=main}
+Table <- 
+  tableby(
+    ratio_group ~ dead,
+    total = TRUE,
+    data = filter(df, 
+            !(ratio_flag == "No RBC no FFP"),
+            age_f == "65+"),
+    control = Controls
+  )
+
+summary(Table, text=TRUE, title = "Both groups together") %>% 
+  kbl() %>% 
+  kable_classic(full_width=FALSE)
+```
+     
+    
+```{r eval=main}
+Table <- 
+  tableby(
+    ratio_group ~ dead,
+    total = TRUE,
+    data = filter(df, wb_group == "CB only",
+                  !(ratio_flag == "No RBC no FFP"),
+                  age_f == "65+"),
+    control = Controls
+  )
+
+note("CB only")
+
+summary(Table, text=TRUE, title = "CB only group") %>% 
+  kbl() %>% 
+  kable_classic(full_width=FALSE)
+
+
+Table <- 
+  tableby(
+    ratio_group ~ dead,
+    total = TRUE,
+    data = filter(df, wb_group == "WB+CB",
+                  !(ratio_flag == "No RBC no FFP"),
+                  age_f == "65+"),
+    control = Controls
+  )
+
+note("WB + CB")
+
+summary(Table, text=TRUE, title = "WB+CB group") %>% 
+  kbl() %>% 
+  kable_classic(full_width=FALSE)
+```
+    
+## Cox regression  
+   
+```{r eval=main, include=FALSE}
+# This is necessary because a.x changes for different subset analyses
+
+a.1 <- filter(imp.complete.1, !(ratio_flag == "No RBC no FFP"))
+a.2 <- filter(imp.complete.2, !(ratio_flag == "No RBC no FFP"))
+a.3 <- filter(imp.complete.3, !(ratio_flag == "No RBC no FFP"))
+a.4 <- filter(imp.complete.4, !(ratio_flag == "No RBC no FFP"))
+a.5 <- filter(imp.complete.5, !(ratio_flag == "No RBC no FFP"))
+
+cat(paste("Number of patients included in analysis is", nrow(a.1)))
+
+f <- as.formula("Surv(tstart, tstop, death) ~ WB_GROUP + ratio_group + 
+                  ais_head + ais_chest + ais_abd + totalgcs + 
+                  rcs(sbp) + crany + 
+                  chronic_renal_failure_x + diabetes_mellitus_x + 
+                  anticoagulant_therapy_x + cerebrovascular_accident_x + 
+                  age + moi + rcs(pulserate) + sex + 
+                  cirrhosis_x + dementia_x")
+
+results <- CoxPH(f)
+```
+     
+     
+```{r eval=main}
+print(results)
+
+x <- filter(results, str_detect(term, "WB_GROUP") == TRUE)
+hr <- x$hr
+pvalue <- x$p.value
+low <- x$ci.low
+high <- x$ci.high
+
+y <- filter(results, str_detect(term, "ratio_group") == TRUE)
+hr.ratio <- y$hr
+pvalue.ratio <- y$p.value
+low.ratio <- y$ci.low
+high.ratio <- y$ci.high
+```
+   
+The number of  patients in the subset analysis of ratio is `r nrow(a.1)`.  
+   
+The mortality hazard ratio of WB+CB:CB with 95% confidence interval and p-value are `r hr` (`r low`, `r high`) p=`r pvalue`. The hazard ratio for good versus bad ratio is `r hr.ratio` (`r low.ratio`, `r high.ratio`) p = `r pvalue.ratio`.
+    
+    
+# Acknowledgement             
+         
+Support for this project was provided by an Institutional 
+Development Award (IDeA)
+from the National Institute of General Medical Sciences of the National
+Institutes of Health under grant number U54-GM104941 (PI: Hicks)
+and the state of Delaware.   
+             
+             
+# Linearity  {#sec-app01}    
+     
+
+```{r eval=wrangle}
+
+f <- mfp::mfp( Surv( finaldischargehrs, status ) ~ fp(sbp),
+            family = cox,
+            data = filter(df, age_f == "65+")) 
+summary(f) 
+
+f <- mfp::mfp( Surv( finaldischargehrs, status ) ~ fp(totalgcs),
+            family = cox,
+            data = filter(df, age_f == "65+")) 
+summary(f) 
+
+f <- mfp::mfp( Surv( finaldischargehrs, status ) ~ fp(pulserate),
+            family = cox,
+            data = filter(df, age_f == "65+")) 
+summary(f)
+
+f <- mfp::mfp( Surv( finaldischargehrs, status ) ~ fp(age),
+            family = cox,
+            data = filter(df, age_f == "65+")) 
+summary(f)
+
+
+
+m <- 
+  glm(status ~ age, family=binomial, data=filter(df, age_f == "65+"))
+
+filter(df, age_f == "65+") %>% 
+  mutate(pred = predict(m, newdata=filter(df, age_f == "65+"), type="response")) %>% 
+  ggplot() + 
+  geom_line(aes(x = age, y = pred, group = wb_group, color = wb_group))
+
+m <- 
+  glm(status ~ totalgcs, family=binomial, data=filter(df, age_f == "65+"))
+
+filter(df, age_f == "65+") %>% 
+  mutate(pred = predict(m, newdata=filter(df, age_f == "65+"), type="response")) %>% 
+  ggplot() + 
+  geom_line(aes(x = totalgcs, y = pred, group = wb_group, color = wb_group))
+
+m <- 
+  glm(status ~ rcs(sbp), family=binomial, data=filter(df, age_f == "65+"))
+
+filter(df, age_f == "65+") %>% 
+  mutate(pred = predict(m, newdata=filter(df, age_f == "65+"), type="response")) %>% 
+  ggplot() + 
+  geom_line(aes(x = sbp, y = pred, group = wb_group, color = wb_group))
+
+m <- 
+  glm(status ~ rcs(pulserate), family=binomial, data=filter(df, age_f == "65+"))
+
+filter(df, age_f == "65+") %>% 
+  mutate(pred = predict(m, newdata=filter(df, age_f == "65+"), type="response")) %>% 
+  ggplot() + 
+  geom_line(aes(x = pulserate, y = pred, group = wb_group, color = wb_group))
+
+
+```
+   
+# Non-proportionality      
+  
+    
+```{r eval=wrangle}
+
+tmp <- filter(df, age_f == "65+")
+
+set.seed(19808)
+n <- sample( 1:nrow(tmp), 1500)
+tmp2 <- tmp[n,] %>% 
+  mutate(crany_flg = !is.na(crany_hrs))
+
+m <- coxph( Surv( finaldischargehrs, status ) ~ WB_GROUP +
+              ais_head + age + sex  + totalgcs +
+              moi + ais_chest + ais_abd +
+              sbp + pulserate + crany_flg,
+            id = inc_key,
+            data = tmp2)
+
+z <- cox.zph(m)
+print(z)
+```
+     
+      
+# Interactions {#sec-app02}     
+     
+     
+```{r eval=wrangle}
+tmp <- filter(df, age_f == "65+")
+
+coxph( Surv( finaldischargehrs, status ) ~ WB_GROUP*rcs(age), 
+       data=tmp , id=inc_key ) %>% tidy()
+
+coxph( Surv( finaldischargehrs, status ) ~ WB_GROUP*sex, 
+       data=tmp, id=inc_key ) %>% tidy()
+
+coxph( Surv( finaldischargehrs, status ) ~ WB_GROUP*moi, 
+       data=tmp, id=inc_key ) %>% tidy()
+
+coxph( Surv( finaldischargehrs, status ) ~ WB_GROUP*totalgcs, 
+       data=tmp , id=inc_key) %>% tidy()
+
+coxph( Surv( finaldischargehrs, status ) ~ WB_GROUP*ais_head, 
+       data=tmp , id=inc_key) %>% tidy()
+
+coxph( Surv( finaldischargehrs, status ) ~ WB_GROUP*ais_chest, 
+       data=tmp, id=inc_key ) %>% tidy()
+
+coxph( Surv( finaldischargehrs, status ) ~ WB_GROUP*ais_abd, 
+       data=tmp, id=inc_key ) %>% tidy()
+
+coxph( Surv( finaldischargehrs, status ) ~ WB_GROUP*rcs(pulserate), 
+       data=tmp, id=inc_key ) %>% tidy()
+
+coxph( Surv( finaldischargehrs, status ) ~ WB_GROUP*rcs(sbp), 
+       data=tmp, id=inc_key ) %>% tidy()   
+```
+     
+     
+Check interaction with treatment for mortality graphically using
+logistic regression.    
+     
+```{r eval=wrangle}
+
+m <- 
+  glm(status ~ ais_head*wb_group, family=binomial, data=filter(df, age_f == "65+"))
+
+filter(df, age_f == "65+") %>% 
+  mutate(pred = predict(m, newdata=filter(df, age_f == "65+"), type="response")) %>% 
+  ggplot() + 
+  geom_line(aes(x = ais_head, y = pred, group = wb_group, color = wb_group))
+
+m <- 
+  glm(status ~ ais_chest*wb_group, family=binomial, data=filter(df, age_f == "65+"))
+
+filter(df, age_f == "65+") %>% 
+  mutate(pred = predict(m, newdata=filter(df, age_f == "65+"), type="response")) %>% 
+  ggplot() + 
+  geom_line(aes(x = ais_chest, y = pred, group = wb_group, color = wb_group))
+
+m <- 
+  glm(status ~ age*wb_group, family=binomial, data=filter(df, age_f == "65+"))
+
+filter(df, age_f == "65+") %>% 
+  mutate(pred = predict(m, newdata=filter(df, age_f == "65+"), type="response")) %>% 
+  ggplot() + 
+  geom_line(aes(x = age, y = pred, group = wb_group, color = wb_group))
+
+
+m <- 
+  glm(status ~ totalgcs*wb_group, family=binomial, data=filter(df, age_f == "65+"))
+
+filter(df, age_f == "65+") %>% 
+  mutate(pred = predict(m, newdata=filter(df, age_f == "65+"), type="response")) %>% 
+  ggplot() + 
+  geom_line(aes(x = totalgcs, y = pred, group = wb_group, color = wb_group))
+
+m <- 
+  glm(status ~ sbp*wb_group, family=binomial, data=filter(df, age_f == "65+"))
+
+filter(df, age_f == "65+") %>% 
+  mutate(pred = predict(m, newdata=filter(df, age_f == "65+"), type="response")) %>% 
+  ggplot() + 
+  geom_line(aes(x = sbp, y = pred, group = wb_group, color = wb_group))
+
+m <- 
+  glm(status ~ pulserate*wb_group, family=binomial, data=filter(df, age_f == "65+"))
+
+filter(df, age_f == "65+") %>% 
+  mutate(pred = predict(m, newdata=filter(df, age_f == "65+"), type="response")) %>% 
+  ggplot() + 
+  geom_line(aes(x = pulserate, y = pred, group = wb_group, color = wb_group))
+
+```
+     
+     
+Check interactions with totalgcs and AIS chest by comparing models with AIC. 
+    
+```{r eval=wrangle}
+
+tmp <- filter(df, age_f == "65+")
+
+f.1 <- as.formula("Surv(finaldischargehrs, status) ~ WB_GROUP + ais_head + 
+                  ais_chest + ais_abd + totalgcs + rcs(sbp) + 
+                  chronic_renal_failure_x + diabetes_mellitus_x + 
+                  anticoagulant_therapy_x + cerebrovascular_accident_x + 
+                  age + moi + rcs(pulserate) + sex + 
+                  cirrhosis_x + dementia_x")
+
+m.1 <- coxph( f.1, data=tmp , id=inc_key)
+
+tidy(m.1, exponentiate = TRUE)
+
+avg_comparisons(m.1, variables = "WB_GROUP",  type = "risk")
+
+
+f.2 <- as.formula("Surv(finaldischargehrs, status) ~ WB_GROUP + ais_head + 
+                  ais_chest + ais_abd + totalgcs + rcs(sbp) + 
+                  chronic_renal_failure_x + diabetes_mellitus_x + 
+                  anticoagulant_therapy_x + cerebrovascular_accident_x + 
+                  age + moi + rcs(pulserate) + sex + 
+                  cirrhosis_x + dementia_x + WB_GROUP:totalgcs ")
+
+m.2 <- coxph( f.2, data=tmp , id=inc_key)
+
+print(tidy(m.2, exponentiate = TRUE), n=44)
+
+avg_comparisons(m.2, variables = "WB_GROUP",  type = "risk")
+
+cand.set <- list(
+  "m.1" = m.1,
+  "M.2" = m.2
+)
+
+aictab(cand.set = cand.set)
+
+f.3 <- as.formula("Surv(finaldischargehrs, status) ~ WB_GROUP + ais_head + 
+                  ais_chest + ais_abd + totalgcs + rcs(sbp) + 
+                  chronic_renal_failure_x + diabetes_mellitus_x + 
+                  anticoagulant_therapy_x + cerebrovascular_accident_x + 
+                  age + moi + rcs(pulserate) + sex + 
+                  cirrhosis_x + dementia_x + WB_GROUP:ais_chest ")
+
+m.3 <- coxph( f.3, data=tmp , id=inc_key)
+
+print(tidy(m.3, exponentiate = TRUE), n=44)
+
+avg_comparisons(m.3, variables = "WB_GROUP",  type = "risk")
+
+cand.set <- list(
+  "m.1" = m.1,
+  "M.3" = m.3
+)
+
+aictab(cand.set = cand.set)
+
+```
+    
+    
+# Variable Selection {#sec-app04}         
+    
+This uses random forest which begins by including essential factors identified by the clinical team and tests additional factors using AIC.  
+   
+```{r eval=wrangle}
+
+tmp <- filter(df, age_f == "65+") %>% 
+  select(WB_GROUP, ais_head, ais_chest, ais_abd, sex, sbp, totalgcs,
+         moi, pulserate, age, cirrhosis_x, cerebrovascular_accident_x,
+         chronic_renal_failure_x, diabetes_mellitus_x, anticoagulant_therapy_x,
+         bleeding_disorder_x, dementia_x, crany_flg, status) %>% 
+  mutate(status = factor(status))
+
+f <- as.formula(paste("status ~", paste(names(select(tmp, -status)), collapse="+")))
+
+m <- randomForest(f, importance = FALSE, data = na.omit(tmp))
+
+randomForest::importance(m) %>% 
+  as.data.frame() %>% 
+  arrange(desc(MeanDecreaseGini)) %>% 
+  mutate(across(where(is.numeric), ~round(.x, 2))) %>% 
+  as.data.frame()
+
+
+# AIC cannot be extracted from the pooled imputed datasets
+# so original dataset is used with missing values,
+# but same results with using dataset with imputation, a.1
+
+tmp.0 <- filter(df, age_f == "65+") %>% 
+  select(WB_GROUP, ais_head, ais_chest, ais_abd, sex, sbp, 
+         totalgcs, moi, pulserate, age, cirrhosis_x,
+         chronic_renal_failure_x, diabetes_mellitus_x, anticoagulant_therapy_x,
+         cerebrovascular_accident_x, bleeding_disorder_x, dementia_x,
+         finaldischargehrs, status, crany_hrs, inc_key)
+
+tmp.1 <- 
+  tmerge(data1 = tmp.0,
+         data2 = tmp.0,
+         id = inc_key,
+         death = event( finaldischargehrs, status ),
+         crany = tdc(crany_hrs),
+         options = list( idname = "inc_key" ) )
+
+f.01 <- as.formula(
+  Surv(tstart, tstop, death) ~ WB_GROUP + totalgcs + rcs(sbp) + rcs(pulserate) +
+  age + ais_head + ais_chest + moi + ais_abd + diabetes_mellitus_x + 
+  sex + anticoagulant_therapy_x + crany)
+
+m.01 <- coxph(f.01, data = tmp.1, id = inc_key)
+
+f.02 <- update.formula(f.01, ~ . + dementia_x)
+m.02 <- coxph(f.02, data = tmp.1, id = inc_key)
+
+f.03 <- update.formula(f.02, ~ . + cerebrovascular_accident_x)
+m.03 <- coxph(f.03, data = tmp.1, id = inc_key)
+
+f.04 <- update.formula(f.03, ~ . + chronic_renal_failure_x)
+m.04 <- coxph(f.04, data = tmp.1, id = inc_key)
+
+f.05 <- update.formula(f.04, ~ . + cirrhosis_x)
+m.05 <- coxph(f.05, data = tmp.1, id = inc_key)
+
+f.06 <- update.formula(f.05, ~ . + bleeding_disorder_x)
+m.06 <- coxph(f.06, data = tmp.1, id = inc_key)
+
+cand.set <- list(
+  "m.01" = m.01,
+  "M.02" = m.02,
+  "M.03" = m.03,
+  "M.04" = m.04,
+  "M.05" = m.05,
+  "M.06" = m.06
+)
+
+aictab(cand.set = cand.set)
+
+print(f.05)
+
+```
+    
+     
+# Missingness {#sec-app05}    
+  
+     
+```{r eval=wrangle2}
+
+tmp.0 <- filter(df, age_f == "65+") %>% 
+  select(WB_GROUP, ais_head, ais_chest, ais_abd, sex, sbp, dementia,
+         moi, pulserate, age, cirrhosis, cerebrovascular_accident,
+         chronic_renal_failure, diabetes_mellitus, anticoagulant_therapy,
+         finaldischargehrs, status, crany_hrs, inc_key, 
+         cirrhosis_x, cerebrovascular_accident_x,
+         chronic_renal_failure_x, diabetes_mellitus_x, anticoagulant_therapy_x) %>% 
+  mutate(sex = factor(sex),
+         status = factor(status),
+         miss = ifelse(is.na(sex) | is.na(sbp) |
+                         dementia == "Unk" | cirrhosis == "Unk" |
+                         cerebrovascular_accident == "Unk" |
+                         chronic_renal_failure == "Unk" |
+                         diabetes_mellitus == "Unk" |
+                         anticoagulant_therapy == "Unk", TRUE, FALSE),
+         miss.sex = ifelse(is.na(sex), TRUE,FALSE),
+         miss.sbp = ifelse(is.na(sbp), TRUE, FALSE),
+         miss.comorbid = ifelse(dementia == "Unk" | cirrhosis == "Unk" |
+                                  cerebrovascular_accident == "Unk" |
+                                  chronic_renal_failure == "Unk" |
+                                  diabetes_mellitus == "Unk" |
+                                  anticoagulant_therapy == "Unk", TRUE,  FALSE)
+  )
+
+Table <- 
+  tableby(
+    miss ~ status + finaldischargehrs,
+    total = TRUE,
+    data = tmp.0,
+    control = Controls
+  )
+
+summary(Table, text=TRUE) %>% 
+  kbl() %>% 
+  kable_classic(full_width=FALSE)
+
+# check prediction of missingness with complete data
+
+m <- glm(miss ~ WB_GROUP + ais_head + ais_chest + ais_abd + moi + 
+          age + finaldischargehrs + status,
+         family = binomial,
+         data = tmp.0)
+
+roc.out <- roc(tmp.0$miss, predict(m, type = "response"), data = tmp.0)
+auc.roc <- round(auc(roc.out), 2)
+cat(paste("AUC for predicting missingness is", as.character(auc.roc)))
+
+m.sex <- glm(update.formula(m, miss.sex ~ . ), family = binomial, data = tmp.0)
+roc.out <- roc(tmp.0$miss.sex, predict(m.sex, type = "response"), data = tmp.0)
+auc.roc <- round(auc(roc.out), 2)
+cat(paste("AUC for predicting sex is", as.character(auc.roc)))
+
+m.sbp <- glm(update.formula(m, miss.sbp ~ .), family = binomial, data = tmp.0)
+roc.out <- roc(tmp.0$miss.sbp, predict(m.sbp, type = "response"), data = tmp.0)
+auc.roc <- round(auc(roc.out), 2)
+cat(paste("AUC for predicting missing sbp is", as.character(auc.roc)))
+
+m.comorbid <-  glm(update.formula(m, miss.comorbid ~ .), family = binomial, data = tmp.0)
+roc.out <- roc(tmp.0$miss.comorbid, predict(m.comorbid, type = "response"), data = tmp.0)
+auc.roc <- round(auc(roc.out), 2)
+cat(paste("AUC for predicting missing comorbidity is", as.character(auc.roc)))
+
+```
+         
+    
+# Sensitivity analyses    
+      
+## Mortality without imputing missing values          
+           
+```{r unadj_mx, eval=wrangle2}
+tmp.0 <- filter(df, age_f == "65+") %>% 
+  select(WB_GROUP, sex, status,
+         ais_head, ais_chest, ais_abd, totalgcs, 
+          sbp, pulserate, age, finaldischargehrs, 
+         dementia_x, moi, cirrhosis_x, cerebrovascular_accident_x,
+         chronic_renal_failure_x, diabetes_mellitus_x, anticoagulant_therapy_x,
+         crany_hrs, inc_key, ratio_flag, ratio_group, hem_flg, hem_hrs) %>% 
+  mutate(across(c(sex, WB_GROUP, status, ratio_flag, ratio_group, moi,
+                  dementia_x, cirrhosis_x, cerebrovascular_accident_x,
+                  chronic_renal_failure_x, diabetes_mellitus_x,
+                  anticoagulant_therapy_x),
+                ~ factor(.x))) 
+
+tmp.1 <- tmerge(data1 = tmp.0,
+                data2 = tmp.0,
+                id = inc_key,
+                death = event( finaldischargehrs, status ),
+                crany = tdc( crany_hrs ),
+                options = list( idname = "inc_key" ) )
+
+f <- as.formula("Surv(tstart, tstop, death) ~ WB_GROUP + ais_head + 
+                  ais_chest + ais_abd + totalgcs + rcs(sbp) + crany + 
+                  chronic_renal_failure_x + diabetes_mellitus_x + 
+                  anticoagulant_therapy_x + cerebrovascular_accident_x + 
+                  age + moi + rcs(pulserate) + sex + 
+                  cirrhosis_x + dementia_x")
+
+m <- coxph(f, data=tmp.1, id = inc_key)
+
+results <- 
+  tidy(m, exponentiate = TRUE, conf.int = TRUE) %>% 
+  rename(hr = estimate) %>% 
+  mutate(across(where(is.numeric), ~  round(.x, digits = 3))) %>% 
+  select(term, hr, p.value, conf.low, conf.high) %>% 
+  as.data.frame()
+
+```
+    
+    
+```{r eval=main}
+print(results)
+
+x <- filter(results, str_detect(term, "WB_GROUP") == TRUE)
+hr.sens <- x$hr
+pvalue.sens <- x$p.value
+low.sens <- x$conf.low
+high.sens <- x$conf.high
+```
+   
+The mortality hazard ratio of WB+CB:CB with 95% confidence interval and p-value are `r hr.sens` (`r low.sens`, `r high.sens`) p=`r pvalue.sens`.      
+    
+        
+# Transfusion codes {#sec-app07}    
+    
+```{r eval=wrangle}
+
+kbl( transfusion_codes ) %>% 
+  kable_classic(full_width=FALSE, "striped")
+
+write_xlsx(transfusion_codes, "transfusion.codes.xlsx")
+
+```
+     
+
+
+        
+        
