@@ -8,7 +8,7 @@ This is a project from ChristianaCare Health System evaluating the effect of who
 | -------- | ------ | ------ |  
 | create.2021.transfusion.codes.sas | puf_ICDprocedure.sas7bdat | transfusion_codes_2021.csv |  
 |                                   | puf_ICDprocedure_lookup.sas7bdat | transfused_patients_2021.sas7bdat |  
-| --------------------------------- | -------------------------------- | --------------------------------- |
+|-----------------------------------|----------------------------------|-----------------------------------|
 | create.2021.v4.sas                | puf_trauma.sas7bdat              | trauma2021v4.csv                  |
 |                                   | puf_trauma_lookup.sas7bdat       |                                   |
 |                                   | tqp_inclusion.sas7bdat           |                                   |  
