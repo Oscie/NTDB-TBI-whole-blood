@@ -25,3 +25,23 @@ This is a project from ChristianaCare Health System evaluating the effect of who
 |                                   |                                    |                                   |  
 | create.2020.transfusion.codes.sas | puf_ICDprocedure.sas7bdat          | transfusion_codes_2020.csv        |  
 |                                   | puf_ICDprocedure_lookup.sas7bdat   | transfused_patients_2020.sas7bdat |  
+|                                   |                                    |                                   |  
+| create.2020.v3.sas                | puf_trauma.sas7bdat                | trauma2020v3.csv                  |
+|                                   | puf_trauma_lookup.sas7bdat         |                                   |
+|                                   | tqp_inclusion.sas7bdat             |                                   |  
+|                                   | transfused_patients_2021.sas7bdat  |                                   |  
+|                                   | puf_aisdiagnosis.sas7bdat          |                                   |  
+|                                   | puf_aisdiagnosis_lookup.sas7bdat   |                                   |  
+|                                   | puf_HospitalEvents.sas7bdat        |                                   |  
+|                                   | puf_PreExistingConditions.sas7bdat |                                   |  
+|                                   | puf_ICDprocedure.sas7bdat          |                                   |  
+|                                   | puf_ecode_lookup.sas7bdat          |                                   |   
+|                                   |                                    |                                   |  
+| create.2020.v6.r                  | trauma2020v3.csv                   | df2020.rds                        |  
+|                                   | transfusion_codes_2020.csv         |                                   |  
+|                                   |                                    |                                   |  
+| create.2yrs.v5.r                  | df2020.rds                         | df                                |  
+|                                   | df2021.rds                         |                                   |  
+|                                   | transfusion_codes_2018.csv         |                                   |  
+|                                   |                                    |                                   |  
+| analysis.2yrs.v5.qmd              | df                                 | analysis.2yrs.v5.html             |    
