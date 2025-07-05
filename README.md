@@ -1,7 +1,9 @@
 # NTDB-TBI-whole-blood
 Analysis code for NTDB TBI whole blood transfusion project
 
-This is a project from ChristianaCare Health System evaluating the effect of whole blood + component blood transfusion versus only component blood transfusion in the first 4 hours of arrival among patients with traumatic brain injury. The outcome is mortality which includes withdrawal of life-supporting treatment. National Trauma Data Base data from years 2020 and 2021 were the source data. 
+This is a project from ChristianaCare Health System evaluating the effect of whole blood + component blood transfusion versus only component blood transfusion in the first 4 hours of arrival among patients with traumatic brain injury. The outcome is mortality which includes withdrawal of life-supporting treatment. National Trauma Data Base data from years 2020 and 2021 were the source data.    
+    
+The SAS programs extract NTDB data and create datasets. The R "create" programs do the data wrangling and create the analysis dataset. The R "analysis" program analyzes the data. 
 
 
 | program                           | input                              | output                            |  
@@ -29,7 +31,7 @@ This is a project from ChristianaCare Health System evaluating the effect of who
 | create.2020.v3.sas                | puf_trauma.sas7bdat                | trauma2020v3.csv                  |
 |                                   | puf_trauma_lookup.sas7bdat         |                                   |
 |                                   | tqp_inclusion.sas7bdat             |                                   |  
-|                                   | transfused_patients_2021.sas7bdat  |                                   |  
+|                                   | transfused_patients_2020.sas7bdat  |                                   |  
 |                                   | puf_aisdiagnosis.sas7bdat          |                                   |  
 |                                   | puf_aisdiagnosis_lookup.sas7bdat   |                                   |  
 |                                   | puf_HospitalEvents.sas7bdat        |                                   |  
