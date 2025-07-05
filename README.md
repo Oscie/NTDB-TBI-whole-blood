@@ -20,6 +20,5 @@ This is a project from ChristianaCare Health System evaluating the effect of who
 |                                   | puf_ICDprocedure.sas7bdat          |                                   |  
 |                                   | puf_ecode_lookup.sas7bdat          |                                   |   
 |-----------------------------------|------------------------------------|-----------------------------------|  
-|___________________________________|____________________________________|___________________________________|  
 | create.2021.v10.r                 | trauma2021v4.csv                   | df2021.rds                        |  
 |                                   | transfusion_codes_2021.csv         |                                   |  
