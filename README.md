@@ -8,7 +8,7 @@ This is a project from ChristianaCare Health System evaluating the effect of who
 | --------------------------------- | ---------------------------------- | --------------------------------- |  
 | create.2021.transfusion.codes.sas | puf_ICDprocedure.sas7bdat          | transfusion_codes_2021.csv        |  
 |                                   | puf_ICDprocedure_lookup.sas7bdat   | transfused_patients_2021.sas7bdat |  
-|-----------------------------------|------------------------------------|-----------------------------------|
+|                                   |                                    |                                   |  
 | create.2021.v4.sas                | puf_trauma.sas7bdat                | trauma2021v4.csv                  |
 |                                   | puf_trauma_lookup.sas7bdat         |                                   |
 |                                   | tqp_inclusion.sas7bdat             |                                   |  
@@ -19,6 +19,9 @@ This is a project from ChristianaCare Health System evaluating the effect of who
 |                                   | puf_PreExistingConditions.sas7bdat |                                   |  
 |                                   | puf_ICDprocedure.sas7bdat          |                                   |  
 |                                   | puf_ecode_lookup.sas7bdat          |                                   |   
-|-----------------------------------|------------------------------------|-----------------------------------|  
+|                                   |                                    |                                   |  
 | create.2021.v10.r                 | trauma2021v4.csv                   | df2021.rds                        |  
 |                                   | transfusion_codes_2021.csv         |                                   |  
+|                                   |                                    |                                   |  
+| create.2020.transfusion.codes.sas | puf_ICDprocedure.sas7bdat          | transfusion_codes_2020.csv        |  
+|                                   | puf_ICDprocedure_lookup.sas7bdat   | transfused_patients_2020.sas7bdat |  
