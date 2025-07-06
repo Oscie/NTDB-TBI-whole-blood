@@ -3,7 +3,7 @@ Analysis code for NTDB TBI whole blood transfusion project
 
 This is a project from ChristianaCare Health System evaluating the effect of whole blood + component blood transfusion versus only component blood transfusion in the first 4 hours of arrival among patients with traumatic brain injury. The outcome is mortality which includes withdrawal of life-supporting treatment. National Trauma Data Base data from years 2020 and 2021 were the source data.    
     
-The SAS programs extract NTDB data and create datasets. The R "create" programs do the data wrangling and create the analysis dataset. The R "analysis" program analyzes the data. 
+The SAS programs extract NTDB data and create datasets. The R "create" programs do the data wrangling and create the analysis dataset. The R "analysis" program analyzes the data. Local directory and LIBNAME references have been removed.  
 
 
 | program                           | input                              | output                            |  
